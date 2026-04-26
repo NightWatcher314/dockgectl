@@ -1,0 +1,144 @@
+# dockgectl
+
+[English](README.md) | [中文](README-zh.md)
+
+`dockgectl` is a Python CLI for automating [Dockge](https://github.com/louislam/dockge) through the same Socket.IO protocol used by the Dockge web UI.
+
+`dockgectl` is built as an AI-native operations tool. The repository includes a Codex skill at [`skills/dockge/SKILL.md`](skills/dockge/SKILL.md), so an AI agent can manage Dockge with explicit safety rules, command shapes, and verification steps instead of guessing raw Socket.IO events.
+
+It focuses on Dockge stack workflows: listing and inspecting stacks, saving and deploying compose files, running stack lifecycle actions, checking service status, restarting services, listing Docker networks exposed by Dockge, and converting `docker run` commands to Compose YAML.
+
+Dockge does not currently expose a broad documented REST API for stack operations. `dockgectl` wraps Dockge 1.x internal Socket.IO events and has been tested against Dockge `1.5.0`; compatibility with other Dockge versions is not guaranteed.
+
+## AI-Native Skill
+
+The included `dockge` skill teaches agents to use `dockgectl` as the stable executor for Dockge changes.
+
+Key rules encoded in the skill:
+
+- Use `dockgectl ... -o json` for inspection when exact state matters.
+- Do not write real tokens, passwords, or private instance URLs into docs or command examples.
+- Prefer supported `dockgectl` commands over raw Socket.IO calls.
+- Require explicit user intent for disruptive actions such as `stack stop`, `stack down`, `stack delete`, and overwriting with `stack deploy`.
+- Verify stack mutations with `dockgectl stack get NAME -o json`; verify service-level changes with `dockgectl service status NAME -o json`.
+
+## Install
+
+With Homebrew:
+
+```bash
+brew tap NightWatcher314/homebrew-formula
+brew install dockgectl
+```
+
+For development:
+
+```bash
+uv sync
+uv run dockgectl --help
+```
+
+## Configure
+
+Create a profile and log in:
+
+```bash
+dockgectl config profile add home --url https://dockge.example.com --use
+dockgectl auth login --username admin
+dockgectl auth status
+```
+
+Use a specific profile for one command:
+
+```bash
+DOCKGECTL_PROFILE=home dockgectl stack list
+```
+
+Inspect the active configuration:
+
+```bash
+dockgectl config get
+dockgectl doctor
+```
+
+Useful environment variables:
+
+```bash
+DOCKGECTL_URL=https://dockge.example.com
+DOCKGECTL_TOKEN=...
+DOCKGECTL_USERNAME=admin
+DOCKGECTL_PASSWORD=...
+DOCKGECTL_ENDPOINT=
+DOCKGECTL_INSECURE=1
+```
+
+## Stacks
+
+List and inspect stacks:
+
+```bash
+dockgectl stack list
+dockgectl stack get app -o json
+```
+
+Save or deploy a stack:
+
+```bash
+dockgectl stack save app -f compose.yml --env-file .env
+dockgectl stack deploy app -f compose.yml --env-file .env
+```
+
+Run stack actions:
+
+```bash
+dockgectl stack start app
+dockgectl stack stop app
+dockgectl stack restart app
+dockgectl stack update app
+dockgectl stack down app
+dockgectl stack delete app
+```
+
+For an existing Dockge agent endpoint:
+
+```bash
+dockgectl stack list --endpoint remote.example.com
+```
+
+## Services
+
+Inspect and manage services inside a stack:
+
+```bash
+dockgectl service status app -o json
+dockgectl service start app web
+dockgectl service stop app web
+dockgectl service restart app web
+```
+
+## Networks and Composerize
+
+```bash
+dockgectl network list
+dockgectl composerize 'docker run --name web nginx:alpine'
+```
+
+## Authentication and Storage
+
+By default, `dockgectl` saves Dockge JWT tokens but not passwords. To save a password in the active profile:
+
+```bash
+DOCKGECTL_PASSWORD='...' dockgectl auth login --username admin --save-password
+```
+
+Later logins can reuse the saved password:
+
+```bash
+dockgectl auth login --use-saved-password
+```
+
+The config file is stored at `~/.config/dockgectl/config.json` with mode `0600` where possible, but saved passwords are still plaintext. Only use `--save-password` on machines you trust.
+
+## License
+
+MIT
