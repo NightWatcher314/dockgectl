@@ -6,6 +6,7 @@ import typer
 from rich.console import Console
 
 from dockgectl import __version__
+from dockgectl.command_help import print_help_if_no_subcommand
 from dockgectl.commands import auth, config_cmd, network, service, stack
 from dockgectl.context import make_client
 from dockgectl.errors import DockgectlError
@@ -17,6 +18,11 @@ app.add_typer(stack.app, name="stack")
 app.add_typer(service.app, name="service")
 app.add_typer(network.app, name="network")
 console = Console(stderr=True)
+
+
+@app.callback(invoke_without_command=True)
+def cli_callback(ctx: typer.Context):
+    print_help_if_no_subcommand(ctx)
 
 
 @app.command()

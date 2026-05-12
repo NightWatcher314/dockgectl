@@ -7,6 +7,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from dockgectl.command_help import print_help_if_no_subcommand
 from dockgectl.client import status_name
 from dockgectl.context import make_client
 from dockgectl.errors import NotFoundError
@@ -14,6 +15,11 @@ from dockgectl.output import dump
 
 app = typer.Typer(help="Manage Dockge stacks")
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def stack_callback(ctx: typer.Context):
+    print_help_if_no_subcommand(ctx)
 
 
 def _endpoint(value: str | None) -> str | None:
@@ -145,4 +151,3 @@ def down(name: str, endpoint: str = typer.Option(None, "--endpoint")):
 @app.command("delete")
 def delete(name: str, endpoint: str = typer.Option(None, "--endpoint")):
     _action("delete", name, endpoint)
-

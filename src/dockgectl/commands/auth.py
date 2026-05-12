@@ -7,12 +7,18 @@ import sys
 import typer
 from rich.console import Console
 
+from dockgectl.command_help import print_help_if_no_subcommand
 from dockgectl.client import DockgeClient
 from dockgectl.config import Config, normalize_base_url
 from dockgectl.errors import DockgectlError
 
 app = typer.Typer(help="Authenticate to Dockge")
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def auth_callback(ctx: typer.Context):
+    print_help_if_no_subcommand(ctx)
 
 
 @app.command("login")

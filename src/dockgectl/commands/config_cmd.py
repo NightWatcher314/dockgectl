@@ -4,6 +4,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from dockgectl.command_help import print_help_if_no_subcommand
 from dockgectl.config import Config, config_path, normalize_base_url
 from dockgectl.output import dump
 
@@ -11,6 +12,16 @@ app = typer.Typer(help="Manage local dockgectl configuration")
 profile_app = typer.Typer(help="Manage Dockge instance profiles")
 app.add_typer(profile_app, name="profile")
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def config_callback(ctx: typer.Context):
+    print_help_if_no_subcommand(ctx)
+
+
+@profile_app.callback(invoke_without_command=True)
+def profile_callback(ctx: typer.Context):
+    print_help_if_no_subcommand(ctx)
 
 
 @app.command("set-url")
@@ -101,4 +112,3 @@ def profile_remove(name: str, yes: bool = typer.Option(False, "--yes", "-y")):
     cfg.remove_profile(name)
     cfg.save()
     console.print(f"Removed profile '{name}'")
-

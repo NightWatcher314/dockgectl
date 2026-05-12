@@ -6,11 +6,17 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from dockgectl.command_help import print_help_if_no_subcommand
 from dockgectl.context import make_client
 from dockgectl.output import dump
 
 app = typer.Typer(help="Manage services inside a Dockge stack")
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def service_callback(ctx: typer.Context):
+    print_help_if_no_subcommand(ctx)
 
 
 def _status_table(data: dict[str, Any]) -> Table:
@@ -58,4 +64,3 @@ def stop(stack: str, service: str, endpoint: str = typer.Option(None, "--endpoin
 @app.command("restart")
 def restart(stack: str, service: str, endpoint: str = typer.Option(None, "--endpoint")):
     _action("restart", stack, service, endpoint)
-
