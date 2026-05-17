@@ -23,6 +23,12 @@ def test_missing_command_group_subcommand_shows_help():
     assert "Missing command" not in res.output
 
 
+def test_agent_group_shows_help():
+    res = CliRunner().invoke(app, ["agent"])
+    assert res.exit_code == 0
+    assert "Manage Dockge agent hosts" in res.output
+
+
 def test_config_get_uses_temp_config(tmp_path, monkeypatch):
     cfg_path = tmp_path / "config.json"
     monkeypatch.setenv("DOCKGECTL_CONFIG", str(cfg_path))

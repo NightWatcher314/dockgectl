@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 from typing import Any, Callable
 
 import socketio
@@ -44,7 +45,9 @@ class DockgeClient:
         self.agent_list: dict[str, Any] | None = None
         self._info_event = threading.Event()
         self._auto_login = threading.Event()
+        self._agent_list_event = threading.Event()
         self._stack_lists: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._terminal_writes: queue.Queue[tuple[str, str]] = queue.Queue()
 
     def _new_socket(self) -> Any:
         if self.socket_factory:
@@ -91,10 +94,13 @@ class DockgeClient:
     def _on_agent(self, event_name: str, *args: Any) -> None:
         if event_name == "stackList" and args and isinstance(args[0], dict):
             self._stack_lists.put(args[0])
+        if event_name == "terminalWrite" and len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], str):
+            self._terminal_writes.put((args[0], args[1]))
 
     def _on_agent_list(self, data: dict[str, Any]) -> None:
         if data.get("ok"):
             self.agent_list = data.get("agentList") or {}
+            self._agent_list_event.set()
 
     def _call(self, event: str, *args: Any, timeout: float | None = None) -> Any:
         self.connect()
@@ -160,6 +166,14 @@ class DockgeClient:
         res = self._require_ok(self._call("composerize", docker_run_command))
         return res.get("composeTemplate", "") if isinstance(res, dict) else ""
 
+    def list_agents(self) -> dict[str, Any]:
+        self.ensure_authenticated()
+        if self.agent_list is None:
+            self._agent_list_event.wait(self.timeout)
+        if self.agent_list is None:
+            raise ApiError("Timed out waiting for Dockge agentList")
+        return self.agent_list
+
     def agent_call(self, event: str, *args: Any, endpoint: str | None = None, timeout: float | None = None) -> Any:
         self.ensure_authenticated()
         return self._require_ok(self._call("agent", self.endpoint if endpoint is None else endpoint, event, *args, timeout=timeout))
@@ -183,6 +197,28 @@ class DockgeClient:
     def get_stack(self, name: str, endpoint: str | None = None) -> dict[str, Any]:
         res = self.agent_call("getStack", name, endpoint=endpoint)
         return res.get("stack", {}) if isinstance(res, dict) else {}
+
+    def stack_logs(self, name: str, endpoint: str | None = None, follow: bool = False, wait: float = 2.0):
+        wanted = self.endpoint if endpoint is None else endpoint
+        terminal_name = combined_terminal_name(wanted, name)
+        while not self._terminal_writes.empty():
+            self._terminal_writes.get_nowait()
+        self.get_stack(name, endpoint=wanted)
+        res = self.agent_call("terminalJoin", terminal_name, endpoint=wanted)
+        buffer = res.get("buffer", "") if isinstance(res, dict) else ""
+        if buffer:
+            yield buffer
+        deadline = time.monotonic() + wait
+        while follow or time.monotonic() < deadline:
+            timeout = 0.5 if follow else max(0.0, min(0.5, deadline - time.monotonic()))
+            if timeout == 0:
+                break
+            try:
+                received_name, data = self._terminal_writes.get(timeout=timeout)
+            except queue.Empty:
+                continue
+            if received_name == terminal_name:
+                yield data
 
     def save_stack(self, name: str, compose_yaml: str, compose_env: str, is_add: bool, endpoint: str | None = None) -> Any:
         return self.agent_call("saveStack", name, compose_yaml, compose_env, is_add, endpoint=endpoint, timeout=max(self.timeout, 60))
@@ -223,3 +259,7 @@ def status_name(value: Any) -> str:
         return STATUS_NAMES.get(int(value), str(value))
     except (TypeError, ValueError):
         return str(value)
+
+
+def combined_terminal_name(endpoint: str, stack: str) -> str:
+    return f"combined-{endpoint}-{stack}"

@@ -79,6 +79,8 @@ DOCKGECTL_INSECURE=1
 ```bash
 dockgectl stack list
 dockgectl stack get app -o json
+dockgectl stack logs app
+dockgectl stack logs app --follow
 ```
 
 保存或部署 stack：
@@ -102,7 +104,9 @@ dockgectl stack delete app
 指定已有 Dockge agent endpoint：
 
 ```bash
+dockgectl agent list
 dockgectl stack list --endpoint remote.example.com
+dockgectl stack logs app --endpoint remote.example.com
 ```
 
 ## 服务

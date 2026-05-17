@@ -79,6 +79,8 @@ List and inspect stacks:
 ```bash
 dockgectl stack list
 dockgectl stack get app -o json
+dockgectl stack logs app
+dockgectl stack logs app --follow
 ```
 
 Save or deploy a stack:
@@ -102,7 +104,9 @@ dockgectl stack delete app
 For an existing Dockge agent endpoint:
 
 ```bash
+dockgectl agent list
 dockgectl stack list --endpoint remote.example.com
+dockgectl stack logs app --endpoint remote.example.com
 ```
 
 ## Services

@@ -30,6 +30,18 @@ class FakeSocket:
                 return {"tokenRequired": True}
             return {"ok": True, "token": "jwt"}
         if event == "loginByToken":
+            self.handlers["agentList"]({
+                "ok": True,
+                "agentList": {
+                    "": {"endpoint": "", "name": "", "url": "", "username": ""},
+                    "remote.example.com": {
+                        "endpoint": "remote.example.com",
+                        "name": "remote",
+                        "url": "https://remote.example.com",
+                        "username": "admin",
+                    },
+                },
+            })
             return {"ok": True}
         if event == "composerize":
             return {"ok": True, "composeTemplate": "services:\n  web:\n    image: nginx\n"}
@@ -42,6 +54,8 @@ class FakeSocket:
                 if args[0] == "missing":
                     return {"ok": False, "msg": "Stack not found"}
                 return {"ok": True, "stack": {"name": args[0], "status": 3}}
+            if agent_event == "terminalJoin":
+                return {"ok": True, "buffer": "existing log\n"}
             if agent_event == "serviceStatusList":
                 return {"ok": True, "serviceStatusList": {"web": "running"}}
             if agent_event == "getDockerNetworkList":
@@ -83,6 +97,22 @@ def test_agent_helpers_extract_payloads():
     assert c.get_stack("app")["name"] == "app"
     assert c.service_status("app") == {"web": "running"}
     assert c.docker_networks() == ["bridge"]
+
+
+def test_list_agents_waits_for_agent_list_push():
+    fake = FakeSocket()
+    c = client(fake)
+    agents = c.list_agents()
+    assert agents["remote.example.com"]["name"] == "remote"
+
+
+def test_stack_logs_joins_combined_terminal_for_endpoint():
+    fake = FakeSocket()
+    c = client(fake)
+    chunks = list(c.stack_logs("app", endpoint="remote.example.com", wait=0))
+    assert chunks == ["existing log\n"]
+    assert ("agent", ("remote.example.com", "getStack", "app"), 20) in fake.calls
+    assert ("agent", ("remote.example.com", "terminalJoin", "combined-remote.example.com-app"), 20) in fake.calls
 
 
 def test_get_stack_not_found_raises_not_found():

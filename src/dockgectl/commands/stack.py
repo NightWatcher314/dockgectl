@@ -80,6 +80,24 @@ def get_stack(
         client.disconnect()
 
 
+@app.command("logs")
+def logs(
+    name: str,
+    endpoint: str = typer.Option(None, "--endpoint", help="Dockge agent endpoint, empty for main instance"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Keep streaming log output"),
+    wait: float = typer.Option(2.0, "--wait", help="Seconds to wait for initial log output without --follow"),
+):
+    _cfg, client = make_client()
+    try:
+        for chunk in client.stack_logs(name, endpoint=_endpoint(endpoint), follow=follow, wait=wait):
+            console.file.write(chunk)
+            console.file.flush()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        client.disconnect()
+
+
 @app.command("save")
 def save_stack(
     name: str,

@@ -7,7 +7,7 @@ from rich.console import Console
 
 from dockgectl import __version__
 from dockgectl.command_help import print_help_if_no_subcommand
-from dockgectl.commands import auth, config_cmd, network, service, stack
+from dockgectl.commands import agent, auth, config_cmd, network, service, stack
 from dockgectl.context import make_client
 from dockgectl.errors import DockgectlError
 
@@ -17,6 +17,7 @@ app.add_typer(auth.app, name="auth")
 app.add_typer(stack.app, name="stack")
 app.add_typer(service.app, name="service")
 app.add_typer(network.app, name="network")
+app.add_typer(agent.app, name="agent")
 console = Console(stderr=True)
 
 

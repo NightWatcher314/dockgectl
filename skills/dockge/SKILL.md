@@ -1,6 +1,6 @@
 ---
 name: dockge
-description: Use when managing Dockge through the local dockgectl CLI, including stacks, services, networks, and composerize workflows.
+description: Use when managing Dockge through the local dockgectl CLI, including agent hosts, stacks, stack logs, services, networks, and composerize workflows.
 metadata:
   short-description: Manage Dockge with dockgectl
 ---
@@ -45,8 +45,10 @@ Inspect:
 
 ```bash
 dockgectl doctor
+dockgectl agent list -o json
 dockgectl stack list -o json
 dockgectl stack get app -o json
+dockgectl stack logs app
 dockgectl service status app -o json
 dockgectl network list -o json
 ```
@@ -72,6 +74,8 @@ dockgectl service status app -o json
 Work with existing Dockge agent endpoints:
 
 ```bash
+dockgectl agent list -o json
 dockgectl stack list --endpoint remote.example.com -o json
+dockgectl stack logs app --endpoint remote.example.com
 DOCKGECTL_ENDPOINT=remote.example.com dockgectl stack get app -o json
 ```
