@@ -2,9 +2,9 @@
   "version": 1,
   "skills": {
     "dockge": {
-      "source": "/home/ubuntu/Codes/dockgecli",
+      "source": "/home/arch/Agents/Jarvis/dockgectl",
       "sourceType": "local",
-      "computedHash": "912b105fcb546e0709e87f5e8ee87c1e784d54d6da831b542e5f0a203bb070f7"
+      "computedHash": "280b5f033be8f1cbfb35e26bc8fca30abb5a38b3e5f83d7ff8ee46b883407bff"
     }
   }
 }

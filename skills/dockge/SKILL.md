@@ -15,11 +15,11 @@ Use `dockgectl` as the stable executor for Dockge changes. Prefer it over raw So
 - If `dockgectl` is not available, run commands from the project directory:
 
 ```bash
-cd /home/ubuntu/Codes/dockgecli
+cd /home/arch/Agents/Jarvis/dockgectl
 uv run dockgectl --help
 ```
 
-- When using the fallback, prefix examples with `uv run` after changing into `/home/ubuntu/Codes/dockgecli`.
+- When using the fallback, prefix examples with `uv run` after changing into `/home/arch/Agents/Jarvis/dockgectl`.
 
 ## Core rules
 
