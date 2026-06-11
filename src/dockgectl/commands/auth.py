@@ -11,6 +11,7 @@ from dockgectl.command_help import print_help_if_no_subcommand
 from dockgectl.client import DockgeClient
 from dockgectl.config import Config, normalize_base_url
 from dockgectl.errors import DockgectlError
+from dockgectl.output import dump
 
 app = typer.Typer(help="Authenticate to Dockge")
 console = Console()
@@ -58,7 +59,7 @@ def login(
 
 
 @app.command("status")
-def status():
+def status(output: str = typer.Option("table", "--output", "-o", help="table|json|yaml")):
     cfg = Config.load()
     data = cfg.display()
     data["authenticated"] = False
@@ -73,7 +74,7 @@ def status():
             data["auth_error"] = str(exc)
         finally:
             client.disconnect()
-    console.print(data)
+    dump(data, output)
 
 
 @app.command("logout")

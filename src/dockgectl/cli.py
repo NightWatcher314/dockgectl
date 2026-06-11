@@ -10,6 +10,7 @@ from dockgectl.command_help import print_help_if_no_subcommand
 from dockgectl.commands import agent, auth, config_cmd, network, service, stack
 from dockgectl.context import make_client
 from dockgectl.errors import DockgectlError
+from dockgectl.output import dump
 
 app = typer.Typer(help="Dockge CLI")
 app.add_typer(config_cmd.app, name="config")
@@ -33,7 +34,7 @@ def version():
 
 
 @app.command()
-def doctor():
+def doctor(output: str = typer.Option("table", "--output", "-o", help="table|json|yaml")):
     """Check connectivity to the configured Dockge instance."""
     cfg, client = make_client(require_token=False)
     try:
@@ -48,7 +49,7 @@ def doctor():
                 authenticated = False
         elif client.logged_in:
             authenticated = True
-        Console().print({
+        dump({
             "url": cfg.url,
             "profile": cfg.current_profile,
             "endpoint": cfg.endpoint,
@@ -56,7 +57,7 @@ def doctor():
             "authenticated": authenticated,
             "need_setup": client.need_setup,
             "info": client.info,
-        })
+        }, output)
     finally:
         client.disconnect()
 

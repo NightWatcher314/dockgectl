@@ -20,6 +20,8 @@ skill 中编码的关键规则：
 - 不要把真实 token、密码或私有实例 URL 写进文档和命令示例。
 - 优先使用已支持的 `dockgectl` 命令，而不是直接调用原始 Socket.IO 事件。
 - `stack stop`、`stack down`、`stack delete`、覆盖式 `stack deploy` 等影响服务的操作必须有明确用户意图。
+- 覆盖已有 stack 前，用 `dockgectl stack plan` / `dockgectl stack diff` 预览差异。
+- 使用 `dockgectl stack apply --verify` 完成 save/deploy 后的 stack 与 service 轮询验证。
 - stack 变更后使用 `dockgectl stack get NAME -o json` 验证；服务级变更后使用 `dockgectl service status NAME -o json` 验证。
 
 ## 安装
@@ -54,11 +56,12 @@ dockgectl auth status
 DOCKGECTL_PROFILE=home dockgectl stack list
 ```
 
-查看当前配置：
+查看当前配置和连通性：
 
 ```bash
 dockgectl config get
-dockgectl doctor
+dockgectl doctor -o json
+dockgectl auth status -o json
 ```
 
 常用环境变量：
@@ -78,27 +81,34 @@ DOCKGECTL_INSECURE=1
 
 ```bash
 dockgectl stack list
+dockgectl stack list --all-endpoints -o json
 dockgectl stack get app -o json
-dockgectl stack logs app
-dockgectl stack logs app --follow
+dockgectl stack ps app
+dockgectl stack logs app --tail 200
+dockgectl stack logs app --follow --grep ERROR
 ```
 
-保存或部署 stack：
+预览、保存、部署或应用 stack：
 
 ```bash
-dockgectl stack save app -f compose.yml --env-file .env
-dockgectl stack deploy app -f compose.yml --env-file .env
+dockgectl stack plan app -f compose.yml --env-file .env
+dockgectl stack diff app -f compose.yml --env-file .env
+dockgectl stack save app -f compose.yml --env-file .env --yes
+dockgectl stack deploy app -f compose.yml --env-file .env --yes
+dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
 ```
+
+`stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。`stack diff` 默认会脱敏疑似 secret 的 env 值；`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 会轮询 `stack get` 与 `service status`；即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。
 
 执行 stack 操作：
 
 ```bash
 dockgectl stack start app
-dockgectl stack stop app
+dockgectl stack stop app --yes
 dockgectl stack restart app
 dockgectl stack update app
-dockgectl stack down app
-dockgectl stack delete app
+dockgectl stack down app --yes
+dockgectl stack delete app --yes
 ```
 
 指定已有 Dockge agent endpoint：
@@ -115,8 +125,9 @@ dockgectl stack logs app --endpoint remote.example.com
 
 ```bash
 dockgectl service status app -o json
+dockgectl service status app --all-endpoints -o json
 dockgectl service start app web
-dockgectl service stop app web
+dockgectl service stop app web --yes
 dockgectl service restart app web
 ```
 

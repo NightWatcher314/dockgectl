@@ -35,3 +35,16 @@ def test_config_get_uses_temp_config(tmp_path, monkeypatch):
     res = CliRunner().invoke(app, ["config", "get"])
     assert res.exit_code == 0
     assert "current_profile" in res.output
+
+
+def test_invalid_output_format_fails_for_config_get(tmp_path, monkeypatch):
+    cfg_path = tmp_path / "config.json"
+    monkeypatch.setenv("DOCKGECTL_CONFIG", str(cfg_path))
+    res = CliRunner().invoke(app, ["config", "get", "-o", "bad"])
+    assert res.exit_code == 1
+    assert "Unsupported output format" in str(res.exception)
+
+
+def test_stack_logs_rejects_negative_tail():
+    res = CliRunner().invoke(app, ["stack", "logs", "app", "--tail", "-1"])
+    assert res.exit_code != 0

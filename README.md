@@ -20,6 +20,8 @@ Key rules encoded in the skill:
 - Do not write real tokens, passwords, or private instance URLs into docs or command examples.
 - Prefer supported `dockgectl` commands over raw Socket.IO calls.
 - Require explicit user intent for disruptive actions such as `stack stop`, `stack down`, `stack delete`, and overwriting with `stack deploy`.
+- Preview changes with `dockgectl stack plan` / `dockgectl stack diff` when overwriting an existing stack.
+- Use `dockgectl stack apply --verify` for save/deploy plus post-change stack and service polling.
 - Verify stack mutations with `dockgectl stack get NAME -o json`; verify service-level changes with `dockgectl service status NAME -o json`.
 
 ## Install
@@ -54,11 +56,12 @@ Use a specific profile for one command:
 DOCKGECTL_PROFILE=home dockgectl stack list
 ```
 
-Inspect the active configuration:
+Inspect the active configuration and connectivity:
 
 ```bash
 dockgectl config get
-dockgectl doctor
+dockgectl doctor -o json
+dockgectl auth status -o json
 ```
 
 Useful environment variables:
@@ -78,27 +81,34 @@ List and inspect stacks:
 
 ```bash
 dockgectl stack list
+dockgectl stack list --all-endpoints -o json
 dockgectl stack get app -o json
-dockgectl stack logs app
-dockgectl stack logs app --follow
+dockgectl stack ps app
+dockgectl stack logs app --tail 200
+dockgectl stack logs app --follow --grep ERROR
 ```
 
-Save or deploy a stack:
+Preview, save, deploy, or apply a stack:
 
 ```bash
-dockgectl stack save app -f compose.yml --env-file .env
-dockgectl stack deploy app -f compose.yml --env-file .env
+dockgectl stack plan app -f compose.yml --env-file .env
+dockgectl stack diff app -f compose.yml --env-file .env
+dockgectl stack save app -f compose.yml --env-file .env --yes
+dockgectl stack deploy app -f compose.yml --env-file .env --yes
+dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
 ```
+
+`stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. `stack diff` redacts secret-like env values by default; `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`; if the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome.
 
 Run stack actions:
 
 ```bash
 dockgectl stack start app
-dockgectl stack stop app
+dockgectl stack stop app --yes
 dockgectl stack restart app
 dockgectl stack update app
-dockgectl stack down app
-dockgectl stack delete app
+dockgectl stack down app --yes
+dockgectl stack delete app --yes
 ```
 
 For an existing Dockge agent endpoint:
@@ -115,8 +125,9 @@ Inspect and manage services inside a stack:
 
 ```bash
 dockgectl service status app -o json
+dockgectl service status app --all-endpoints -o json
 dockgectl service start app web
-dockgectl service stop app web
+dockgectl service stop app web --yes
 dockgectl service restart app web
 ```
 

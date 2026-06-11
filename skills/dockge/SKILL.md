@@ -24,10 +24,12 @@ uv run dockgectl --help
 ## Core rules
 
 - Use `dockgectl ... -o json` for inspection when subsequent reasoning depends on exact state.
+- Prefer `dockgectl stack plan` / `dockgectl stack diff` before overwriting an existing stack.
+- Prefer `dockgectl stack apply --verify` for stack save/deploy work that needs post-change validation.
 - Do not write real tokens, passwords, or private instance URLs into docs or command examples.
 - `dockgectl` wraps Dockge's internal Socket.IO protocol; if an event is unsupported, inspect the CLI source before falling back to raw protocol calls.
 - Destructive or disruptive actions such as `stack stop`, `stack down`, `stack delete`, and overwriting with `stack deploy` require explicit user intent.
-- After mutations, verify with `dockgectl stack get NAME -o json`; for service-level changes, also run `dockgectl service status NAME -o json`.
+- After mutations, verify with `dockgectl stack get NAME -o json`; for service-level changes, also run `dockgectl service status NAME -o json`. If a Dockge event times out but the service may still be converging, use `stack apply --verify`, service status, logs, and direct health checks before calling the deploy failed.
 
 ## Common commands
 
@@ -44,24 +46,29 @@ Use `DOCKGECTL_PROFILE=name` for one-off commands.
 Inspect:
 
 ```bash
-dockgectl doctor
+dockgectl doctor -o json
 dockgectl agent list -o json
 dockgectl stack list -o json
+dockgectl stack list --all-endpoints -o json
 dockgectl stack get app -o json
-dockgectl stack logs app
+dockgectl stack ps app -o json
+dockgectl stack logs app --tail 200
 dockgectl service status app -o json
+dockgectl service status app --all-endpoints -o json
 dockgectl network list -o json
 ```
 
 Manage stacks:
 
 ```bash
-dockgectl stack deploy app -f compose.yml --env-file .env
+dockgectl stack plan app -f compose.yml --env-file .env
+dockgectl stack diff app -f compose.yml --env-file .env
+dockgectl stack apply app -f compose.yml --env-file .env --yes
 dockgectl stack start app
 dockgectl stack restart app
-dockgectl stack stop app
-dockgectl stack down app
-dockgectl stack delete app
+dockgectl stack stop app --yes
+dockgectl stack down app --yes
+dockgectl stack delete app --yes
 ```
 
 Manage services:
@@ -69,6 +76,7 @@ Manage services:
 ```bash
 dockgectl service restart app web
 dockgectl service status app -o json
+dockgectl service status app --all-endpoints -o json
 ```
 
 Work with existing Dockge agent endpoints:
