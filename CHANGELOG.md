@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.1 - 2026-06-13
+
+- Fix `stack apply --verify` service-status parsing for Dockge responses that
+  group service records in lists.
+- Treat `healthy`, `started`, and `up` service states as successful verification
+  states while still rejecting unhealthy or exited states.
+- Update README and Dockge skill guidance for the corrected verification
+  behavior.
+
 ## v0.2.0 - 2026-06-12
 
 - Add `stack plan`, `stack diff`, and `stack apply --verify` for safer stack changes.

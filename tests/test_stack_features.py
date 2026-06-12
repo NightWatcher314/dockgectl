@@ -47,5 +47,10 @@ def test_agent_endpoints_normalize_none_and_missing_values():
 def test_service_status_ok_handles_strings_and_dicts():
     assert _service_status_ok({"web": "running"}) is True
     assert _service_status_ok({"web": {"status": "running"}}) is True
+    assert _service_status_ok({"web": {"status": "healthy"}}) is True
+    assert _service_status_ok({"web": [{"name": "web", "status": "healthy"}]}) is True
+    assert _service_status_ok({"web": [{"name": "web", "Status": "running"}], "worker": [{"state": "started"}]}) is True
     assert _service_status_ok({"web": "exited"}) is False
+    assert _service_status_ok({"web": [{"name": "web", "status": "unhealthy"}]}) is False
+    assert _service_status_ok({"web": []}) is False
     assert _service_status_ok({}) is False

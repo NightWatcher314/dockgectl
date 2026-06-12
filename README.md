@@ -98,7 +98,7 @@ dockgectl stack deploy app -f compose.yml --env-file .env --yes
 dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
 ```
 
-`stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. `stack diff` redacts secret-like env values by default; `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`; if the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome.
+`stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. `stack diff` redacts secret-like env values by default; `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`; if the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome. Service verification accepts common Dockge/Docker healthy states such as `running`, `healthy`, `started`, and `up`.
 
 Run stack actions:
 

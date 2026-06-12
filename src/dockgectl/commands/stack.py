@@ -209,18 +209,27 @@ def _health_check(url: str, timeout: float = 5.0) -> dict[str, Any]:
         return {"ok": False, "url": url, "error": str(exc)}
 
 
+def _service_value_ok(value: Any) -> bool:
+    if isinstance(value, list):
+        return bool(value) and all(_service_value_ok(item) for item in value)
+    if isinstance(value, dict):
+        for key in ("status", "state", "Status", "State"):
+            if key in value:
+                return _service_value_ok(value[key])
+        return False
+
+    text = str(value).strip().lower()
+    if text in {"3", "true", "running", "healthy", "started", "up"}:
+        return True
+    if any(bad in text for bad in ("unhealthy", "exited", "dead", "restarting", "failed", "false")):
+        return False
+    return "running" in text or "healthy" in text
+
+
 def _service_status_ok(services: dict[str, Any]) -> bool:
     if not services:
         return False
-    for value in services.values():
-        if isinstance(value, dict):
-            raw = value.get("status") or value.get("state") or value.get("Status") or value
-        else:
-            raw = value
-        text = str(raw).lower()
-        if not ("running" in text or text in {"3", "true"}):
-            return False
-    return True
+    return all(_service_value_ok(value) for value in services.values())
 
 
 def _verify_stack(client, name: str, endpoint: str | None, health_url: str | None, timeout: float, interval: float, require_services: bool = True) -> dict[str, Any]:

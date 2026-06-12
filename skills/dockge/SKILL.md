@@ -29,7 +29,7 @@ uv run dockgectl --help
 - Do not write real tokens, passwords, or private instance URLs into docs or command examples.
 - `dockgectl` wraps Dockge's internal Socket.IO protocol; if an event is unsupported, inspect the CLI source before falling back to raw protocol calls.
 - Destructive or disruptive actions such as `stack stop`, `stack down`, `stack delete`, and overwriting with `stack deploy` require explicit user intent.
-- After mutations, verify with `dockgectl stack get NAME -o json`; for service-level changes, also run `dockgectl service status NAME -o json`. If a Dockge event times out but the service may still be converging, use `stack apply --verify`, service status, logs, and direct health checks before calling the deploy failed.
+- After mutations, verify with `dockgectl stack get NAME -o json`; for service-level changes, also run `dockgectl service status NAME -o json`. If a Dockge event times out but the service may still be converging, use `stack apply --verify`, service status, logs, and direct health checks before calling the deploy failed. `stack apply --verify` accepts service states such as `running`, `healthy`, `started`, and `up`; `health: null` only means no `--health-url` was supplied.
 
 ## Common commands
 

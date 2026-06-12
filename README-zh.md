@@ -98,7 +98,7 @@ dockgectl stack deploy app -f compose.yml --env-file .env --yes
 dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
 ```
 
-`stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。`stack diff` 默认会脱敏疑似 secret 的 env 值；`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 会轮询 `stack get` 与 `service status`；即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。
+`stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。`stack diff` 默认会脱敏疑似 secret 的 env 值；`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 会轮询 `stack get` 与 `service status`；即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。服务验证会接受常见 Dockge/Docker 健康状态，例如 `running`、`healthy`、`started` 和 `up`。
 
 执行 stack 操作：
 
