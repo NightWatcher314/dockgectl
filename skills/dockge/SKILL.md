@@ -87,3 +87,9 @@ dockgectl stack list --endpoint remote.example.com -o json
 dockgectl stack logs app --endpoint remote.example.com
 DOCKGECTL_ENDPOINT=remote.example.com dockgectl stack get app -o json
 ```
+
+For remote endpoint stack inventory, `dockgectl stack list --endpoint ENDPOINT`
+retries one transient `requestStackList` agent timeout and ignores `stackList`
+pushes from other endpoints while waiting for the requested endpoint. If it
+still times out, verify the agent with `dockgectl agent list -o json` before
+falling back to direct host inspection.

@@ -119,6 +119,10 @@ dockgectl stack list --endpoint remote.example.com
 dockgectl stack logs app --endpoint remote.example.com
 ```
 
+`stack list --endpoint ENDPOINT` 会在 Dockge `requestStackList` agent 事件短暂超时
+时重试一次，并且只等待与目标 endpoint 匹配的 `stackList` 推送。如果其他 endpoint
+先推送了 stack list，会忽略这些推送，直到目标 endpoint 响应或命令超时。
+
 ## 服务
 
 查看并管理 stack 内的服务：

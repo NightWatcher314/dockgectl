@@ -119,6 +119,11 @@ dockgectl stack list --endpoint remote.example.com
 dockgectl stack logs app --endpoint remote.example.com
 ```
 
+`stack list --endpoint ENDPOINT` retries one transient Dockge `requestStackList`
+agent timeout and waits only for a `stackList` push matching the requested
+endpoint. If other endpoints publish stack lists first, they are ignored until
+the requested endpoint responds or the command timeout expires.
+
 ## Services
 
 Inspect and manage services inside a stack:

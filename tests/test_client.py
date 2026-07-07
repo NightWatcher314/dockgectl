@@ -1,4 +1,5 @@
 import pytest
+import socketio
 
 from dockgectl.client import DockgeClient, status_name
 from dockgectl.errors import AuthError, NotFoundError
@@ -89,6 +90,45 @@ def test_list_stacks_waits_for_stacklist_push():
     stacks = c.list_stacks(endpoint="")
     assert stacks["app"]["name"] == "app"
     assert stacks["app"]["status"] == 3
+
+
+def test_list_stacks_retries_transient_agent_timeout(monkeypatch):
+    fake = FakeSocket()
+    attempts = 0
+    original_call = fake.call
+
+    def flaky_call(event, data=(), timeout=20):
+        nonlocal attempts
+        if event == "agent" and data[1] == "requestStackList":
+            attempts += 1
+            if attempts == 1:
+                raise socketio.exceptions.TimeoutError()
+        return original_call(event, data, timeout)
+
+    monkeypatch.setattr(fake, "call", flaky_call)
+    monkeypatch.setattr("dockgectl.client.time.sleep", lambda _seconds: None)
+    c = client(fake)
+    stacks = c.list_stacks(endpoint="remote.example.com")
+
+    assert attempts == 2
+    assert stacks["app"]["endpoint"] == "remote.example.com"
+
+
+def test_list_stacks_ignores_unrelated_stacklist_pushes():
+    fake = FakeSocket()
+    original_call = fake.call
+
+    def noisy_call(event, data=(), timeout=20):
+        if event == "agent" and data[1] == "requestStackList":
+            fake.handlers["agent"]("stackList", {"ok": True, "endpoint": "other-1", "stackList": {}})
+            fake.handlers["agent"]("stackList", {"ok": True, "endpoint": "other-2", "stackList": {}})
+        return original_call(event, data, timeout)
+
+    fake.call = noisy_call
+    c = client(fake)
+    stacks = c.list_stacks(endpoint="remote.example.com")
+
+    assert stacks["app"]["endpoint"] == "remote.example.com"
 
 
 def test_agent_helpers_extract_payloads():

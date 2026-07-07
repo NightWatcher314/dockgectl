@@ -182,17 +182,33 @@ class DockgeClient:
         wanted = self.endpoint if endpoint is None else endpoint
         while not self._stack_lists.empty():
             self._stack_lists.get_nowait()
-        self.agent_call("requestStackList", endpoint=wanted)
-        deadline_count = 0
-        while deadline_count < 2:
+
+        last_error: ApiError | None = None
+        for attempt in range(2):
             try:
-                payload = self._stack_lists.get(timeout=self.timeout / 2)
-            except queue.Empty as exc:
-                raise ApiError("Timed out waiting for Dockge stackList push") from exc
+                self.agent_call("requestStackList", endpoint=wanted)
+                last_error = None
+                break
+            except ApiError as exc:
+                last_error = exc
+                if attempt == 0 and "Timed out waiting for Dockge event: agent" in str(exc):
+                    while not self._stack_lists.empty():
+                        self._stack_lists.get_nowait()
+                    time.sleep(3)
+                    continue
+                raise
+        if last_error is not None:
+            raise last_error
+
+        deadline = time.monotonic() + self.timeout
+        while time.monotonic() < deadline:
+            try:
+                payload = self._stack_lists.get(timeout=max(0.0, min(0.5, deadline - time.monotonic())))
+            except queue.Empty:
+                continue
             if payload.get("endpoint", "") == wanted:
                 return payload.get("stackList") or {}
-            deadline_count += 1
-        raise ApiError(f"Did not receive stackList for endpoint: {wanted}")
+        raise ApiError("Timed out waiting for Dockge stackList push")
 
     def get_stack(self, name: str, endpoint: str | None = None) -> dict[str, Any]:
         res = self.agent_call("getStack", name, endpoint=endpoint)

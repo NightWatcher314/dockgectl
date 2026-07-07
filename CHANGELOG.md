@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.2 - 2026-07-08
+
+- Make remote `stack list` requests more tolerant of transient Dockge agent
+  timeouts by retrying one `requestStackList` call before failing.
+- Ignore `stackList` pushes for other agent endpoints while waiting for the
+  requested endpoint, avoiding cross-endpoint races.
+- Update README and Dockge skill guidance for the remote endpoint stack-list
+  behavior.
+
 ## v0.2.1 - 2026-06-13
 
 - Fix `stack apply --verify` service-status parsing for Dockge responses that
