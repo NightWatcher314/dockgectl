@@ -8,7 +8,7 @@
 
 它重点覆盖 Dockge stack 工作流：列出和查看 stacks，保存和部署 compose 文件，执行 stack 生命周期操作，查看服务状态，重启服务，列出 Dockge 暴露的 Docker networks，以及把 `docker run` 命令转换成 Compose YAML。
 
-Dockge 目前没有为 stack 管理提供完整、公开、稳定的 REST API。`dockgectl` 封装的是 Dockge 1.x 内部 Socket.IO 事件，当前已在 Dockge `1.5.0` 上测试通过；不保证兼容其他 Dockge 版本。
+Dockge 目前没有为 stack 管理提供完整、公开、稳定的 REST API。`dockgectl` 封装的是 Dockge 1.x 内部 Socket.IO 事件，当前已在 Dockge `1.5.1-nightwatcher.0` 上测试通过；不保证兼容其他 Dockge 版本。旧版 Dockge 会安全忽略 dockgectl 的握手提示，并保持原有的 eager Agent 行为。
 
 ## AI-Native Skill
 
@@ -98,7 +98,7 @@ dockgectl stack deploy app -f compose.yml --env-file .env --yes
 dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
 ```
 
-`stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。`stack diff` 默认会脱敏疑似 secret 的 env 值；`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 会轮询 `stack get` 与 `service status`；即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。服务验证会接受常见 Dockge/Docker 健康状态，例如 `running`、`healthy`、`started` 和 `up`。
+`stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。省略 `--env-file` 会保留 stack 现有 env；只有显式传入空 env 文件才会清空。变更后 dockgectl 会重新读取 stack，核对提交的 env 是否真正持久化。`stack diff` 默认会脱敏疑似 secret 的 env 值；`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 会轮询 `stack get` 与 `service status`；即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。服务验证会接受常见 Dockge/Docker 健康状态，例如 `running`、`healthy`、`started` 和 `up`。
 
 执行 stack 操作：
 
@@ -119,9 +119,10 @@ dockgectl stack list --endpoint remote.example.com
 dockgectl stack logs app --endpoint remote.example.com
 ```
 
-`stack list --endpoint ENDPOINT` 会在 Dockge `requestStackList` agent 事件短暂超时
-时重试一次，并且只等待与目标 endpoint 匹配的 `stackList` 推送。如果其他 endpoint
-先推送了 stack list，会忽略这些推送，直到目标 endpoint 响应或命令超时。
+在兼容的 Dockge 服务端上，CLI 会话只连接本次请求的 Agent；无关 Agent 离线不会
+阻塞命令。只有只读 Agent 事件收到 Dockge 明确返回的 `AGENT_NOT_READY` 时才会重试
+一次；普通 Socket.IO 超时和所有 stack/service 变更都不会自动重试。
+`stack list --endpoint ENDPOINT` 也只等待目标 endpoint 对应的 `stackList` 推送。
 
 ## 服务
 

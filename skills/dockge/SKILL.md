@@ -28,6 +28,8 @@ uv run dockgectl --help
 - Prefer `dockgectl stack apply --verify` for stack save/deploy work that needs post-change validation.
 - Do not write real tokens, passwords, or private instance URLs into docs or command examples.
 - `dockgectl` wraps Dockge's internal Socket.IO protocol; if an event is unsupported, inspect the CLI source before falling back to raw protocol calls.
+- On compatible Dockge versions, each CLI session lazily connects only the requested Agent endpoint. An unrelated offline Agent must not block the target endpoint.
+- Only explicit `AGENT_NOT_READY` responses for read-only events are retried once. Never automatically retry ambiguous Socket.IO timeouts or stack/service mutations.
 - Destructive or disruptive actions such as `stack stop`, `stack down`, `stack delete`, and overwriting with `stack deploy` require explicit user intent.
 - After mutations, verify with `dockgectl stack get NAME -o json`; for service-level changes, also run `dockgectl service status NAME -o json`. If a Dockge event times out but the service may still be converging, use `stack apply --verify`, service status, logs, and direct health checks before calling the deploy failed. `stack apply --verify` accepts service states such as `running`, `healthy`, `started`, and `up`; `health: null` only means no `--health-url` was supplied.
 
@@ -89,7 +91,8 @@ DOCKGECTL_ENDPOINT=remote.example.com dockgectl stack get app -o json
 ```
 
 For remote endpoint stack inventory, `dockgectl stack list --endpoint ENDPOINT`
-retries one transient `requestStackList` agent timeout and ignores `stackList`
-pushes from other endpoints while waiting for the requested endpoint. If it
-still times out, verify the agent with `dockgectl agent list -o json` before
-falling back to direct host inspection.
+retries one explicit `AGENT_NOT_READY` response and ignores `stackList` pushes
+from other endpoints while waiting for the requested endpoint. It does not
+retry an ambiguous Socket.IO timeout. If it still fails, verify the target
+agent with `dockgectl agent list -o json` before falling back to direct host
+inspection.

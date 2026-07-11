@@ -8,7 +8,7 @@
 
 It focuses on Dockge stack workflows: listing and inspecting stacks, saving and deploying compose files, running stack lifecycle actions, checking service status, restarting services, listing Docker networks exposed by Dockge, and converting `docker run` commands to Compose YAML.
 
-Dockge does not currently expose a broad documented REST API for stack operations. `dockgectl` wraps Dockge 1.x internal Socket.IO events and has been tested against Dockge `1.5.0`; compatibility with other Dockge versions is not guaranteed.
+Dockge does not currently expose a broad documented REST API for stack operations. `dockgectl` wraps Dockge 1.x internal Socket.IO events and has been tested against Dockge `1.5.1-nightwatcher.0`; compatibility with other Dockge versions is not guaranteed. Older Dockge servers safely ignore the dockgectl handshake hint and retain their existing eager Agent behavior.
 
 ## AI-Native Skill
 
@@ -98,7 +98,7 @@ dockgectl stack deploy app -f compose.yml --env-file .env --yes
 dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
 ```
 
-`stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. `stack diff` redacts secret-like env values by default; `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`; if the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome. Service verification accepts common Dockge/Docker healthy states such as `running`, `healthy`, `started`, and `up`.
+`stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. Omitting `--env-file` preserves the current stack env; pass an explicitly empty env file to clear it. After a mutation, dockgectl reads the stack back and verifies the submitted env content. `stack diff` redacts secret-like env values by default; `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`; if the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome. Service verification accepts common Dockge/Docker healthy states such as `running`, `healthy`, `started`, and `up`.
 
 Run stack actions:
 
@@ -119,10 +119,12 @@ dockgectl stack list --endpoint remote.example.com
 dockgectl stack logs app --endpoint remote.example.com
 ```
 
-`stack list --endpoint ENDPOINT` retries one transient Dockge `requestStackList`
-agent timeout and waits only for a `stackList` push matching the requested
-endpoint. If other endpoints publish stack lists first, they are ignored until
-the requested endpoint responds or the command timeout expires.
+On compatible Dockge servers, a CLI session connects only the requested Agent;
+an unrelated offline Agent does not block the command. Read-only Agent events
+retry once only when Dockge explicitly returns `AGENT_NOT_READY`. Ambiguous
+Socket.IO timeouts and all stack/service mutations are never automatically
+retried. `stack list --endpoint ENDPOINT` also waits only for a `stackList` push
+matching the requested endpoint.
 
 ## Services
 
