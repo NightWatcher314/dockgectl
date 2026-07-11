@@ -17,6 +17,17 @@ STATUS_NAMES = {
     4: "exited",
 }
 
+CLIENT_TYPE = "dockgectl"
+LAZY_AGENT_CONNECTION_MODE = "lazy"
+AGENT_STATUS_WAIT_TIMEOUT = 10.0
+READ_ONLY_AGENT_EVENTS = frozenset({
+    "requestStackList",
+    "getStack",
+    "terminalJoin",
+    "serviceStatusList",
+    "getDockerNetworkList",
+})
+
 
 class DockgeClient:
     def __init__(
@@ -43,9 +54,13 @@ class DockgeClient:
         self.info: dict[str, Any] | None = None
         self.need_setup = False
         self.agent_list: dict[str, Any] | None = None
+        self.agent_connection_mode: str | None = None
         self._info_event = threading.Event()
         self._auto_login = threading.Event()
         self._agent_list_event = threading.Event()
+        self._agent_status_changed = threading.Condition()
+        self._agent_statuses: dict[str, str] = {}
+        self._agent_status_messages: dict[str, str] = {}
         self._stack_lists: queue.Queue[dict[str, Any]] = queue.Queue()
         self._terminal_writes: queue.Queue[tuple[str, str]] = queue.Queue()
 
@@ -69,8 +84,13 @@ class DockgeClient:
         self.sio.on("autoLogin", self._on_auto_login)
         self.sio.on("agent", self._on_agent)
         self.sio.on("agentList", self._on_agent_list)
+        self.sio.on("agentStatus", self._on_agent_status)
         try:
-            self.sio.connect(self.base_url, wait_timeout=self.timeout)
+            self.sio.connect(
+                self.base_url,
+                wait_timeout=self.timeout,
+                auth={"clientType": CLIENT_TYPE},
+            )
         except Exception as exc:  # pragma: no cover - exact exception type depends on transport
             raise ApiError(f"Unable to connect to Dockge at {self.base_url}: {exc}") from exc
         self.connected = True
@@ -78,10 +98,24 @@ class DockgeClient:
     def disconnect(self) -> None:
         if self.sio and self.connected:
             self.sio.disconnect()
+        self.sio = None
         self.connected = False
+        self.logged_in = False
+        self.info = None
+        self.need_setup = False
+        self.agent_list = None
+        self.agent_connection_mode = None
+        self._info_event.clear()
+        self._auto_login.clear()
+        self._agent_list_event.clear()
+        with self._agent_status_changed:
+            self._agent_statuses.clear()
+            self._agent_status_messages.clear()
+            self._agent_status_changed.notify_all()
 
     def _on_info(self, data: dict[str, Any]) -> None:
         self.info = data
+        self._update_agent_connection_mode(data)
         self._info_event.set()
 
     def _on_setup(self, *_args: Any) -> None:
@@ -99,8 +133,31 @@ class DockgeClient:
 
     def _on_agent_list(self, data: dict[str, Any]) -> None:
         if data.get("ok"):
-            self.agent_list = data.get("agentList") or {}
-            self._agent_list_event.set()
+            with self._agent_status_changed:
+                self.agent_list = data.get("agentList") or {}
+                self._agent_list_event.set()
+                self._agent_status_changed.notify_all()
+
+    def _update_agent_connection_mode(self, data: Any) -> None:
+        if not isinstance(data, dict):
+            return
+        mode = data.get("agentConnectionMode")
+        if isinstance(mode, str):
+            self.agent_connection_mode = mode
+
+    def _on_agent_status(self, data: dict[str, Any]) -> None:
+        if not isinstance(data, dict) or not isinstance(data.get("endpoint"), str):
+            return
+        endpoint = data["endpoint"]
+        status = str(data.get("status") or "unknown").lower()
+        with self._agent_status_changed:
+            self._agent_statuses[endpoint] = status
+            message = data.get("msg") or data.get("message")
+            if message:
+                self._agent_status_messages[endpoint] = str(message)
+            else:
+                self._agent_status_messages.pop(endpoint, None)
+            self._agent_status_changed.notify_all()
 
     def _call(self, event: str, *args: Any, timeout: float | None = None) -> Any:
         self.connect()
@@ -112,12 +169,22 @@ class DockgeClient:
             raise ApiError(f"Dockge event failed: {event}: {exc}") from exc
 
     @staticmethod
-    def _require_ok(res: Any) -> Any:
+    def _require_ok(res: Any, endpoint: str | None = None) -> Any:
         if isinstance(res, dict) and res.get("ok") is False:
             msg = res.get("msg") or res.get("message") or "Dockge returned ok=false"
-            if "not found" in str(msg).lower():
+            code = str(res.get("code") or "") or None
+            if code is None and "not found" in str(msg).lower():
                 raise NotFoundError(str(msg))
-            raise ApiError(str(msg))
+            response_endpoint = res.get("endpoint") if isinstance(res.get("endpoint"), str) else endpoint
+            display = f"{code}: {msg}" if code and not str(msg).startswith(code) else str(msg)
+            if response_endpoint and response_endpoint not in display:
+                display = f"{display} (endpoint: {response_endpoint})"
+            raise ApiError(
+                display,
+                code=code,
+                endpoint=response_endpoint,
+                retryable=code == "AGENT_NOT_READY",
+            )
         return res
 
     def login(self, username: str, password: str, token: str | None = None) -> dict[str, Any]:
@@ -128,6 +195,7 @@ class DockgeClient:
         if isinstance(res, dict) and res.get("tokenRequired"):
             raise AuthError("2FA token required. Re-run with: dockgectl auth login --totp CODE")
         self._require_ok(res)
+        self._update_agent_connection_mode(res)
         if not isinstance(res, dict) or not res.get("token"):
             raise AuthError("Login succeeded but Dockge did not return a token")
         self.token = res["token"]
@@ -140,6 +208,7 @@ class DockgeClient:
             raise AuthError("No token configured. Run: dockgectl auth login")
         res = self._call("loginByToken", token)
         self._require_ok(res)
+        self._update_agent_connection_mode(res)
         self.logged_in = True
         return res
 
@@ -174,31 +243,75 @@ class DockgeClient:
             raise ApiError("Timed out waiting for Dockge agentList")
         return self.agent_list
 
-    def agent_call(self, event: str, *args: Any, endpoint: str | None = None, timeout: float | None = None) -> Any:
+    def wait_for_agent_ready(self, endpoint: str, timeout: float | None = None) -> None:
+        if not endpoint:
+            return
+
+        deadline = time.monotonic() + min(
+            self.timeout if timeout is None else timeout,
+            AGENT_STATUS_WAIT_TIMEOUT,
+        )
+        with self._agent_status_changed:
+            while True:
+                if self.agent_list is not None and endpoint not in self.agent_list:
+                    raise ApiError(
+                        f"Dockge agent endpoint is not configured: {endpoint}",
+                        code="AGENT_NOT_FOUND",
+                        endpoint=endpoint,
+                    )
+
+                status = self._agent_statuses.get(endpoint)
+                message = self._agent_status_messages.get(endpoint)
+                if status is None and self.agent_connection_mode == LAZY_AGENT_CONNECTION_MODE:
+                    return
+                if status == "online":
+                    return
+                if status == "offline":
+                    detail = f": {message}" if message else ""
+                    raise ApiError(
+                        f"Dockge agent '{endpoint}' is offline{detail}",
+                        code="AGENT_OFFLINE",
+                        endpoint=endpoint,
+                    )
+
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    state = status or "unknown"
+                    raise ApiError(
+                        f"Dockge agent '{endpoint}' did not become ready (status: {state})",
+                        code="AGENT_NOT_READY",
+                        endpoint=endpoint,
+                    )
+                self._agent_status_changed.wait(min(remaining, 0.25))
+
+    def agent_call(
+        self,
+        event: str,
+        *args: Any,
+        endpoint: str | None = None,
+        timeout: float | None = None,
+    ) -> Any:
         self.ensure_authenticated()
-        return self._require_ok(self._call("agent", self.endpoint if endpoint is None else endpoint, event, *args, timeout=timeout))
+        wanted = self.endpoint if endpoint is None else endpoint
+        read_only = event in READ_ONLY_AGENT_EVENTS
+        attempts = 2 if read_only else 1
+        for attempt in range(attempts):
+            try:
+                self.wait_for_agent_ready(wanted)
+                return self._require_ok(self._call("agent", wanted, event, *args, timeout=timeout), endpoint=wanted)
+            except ApiError as exc:
+                if attempt == 0 and read_only and exc.retryable:
+                    time.sleep(0.5)
+                    continue
+                raise
+        raise AssertionError("unreachable")
 
     def list_stacks(self, endpoint: str | None = None) -> dict[str, Any]:
         wanted = self.endpoint if endpoint is None else endpoint
         while not self._stack_lists.empty():
             self._stack_lists.get_nowait()
 
-        last_error: ApiError | None = None
-        for attempt in range(2):
-            try:
-                self.agent_call("requestStackList", endpoint=wanted)
-                last_error = None
-                break
-            except ApiError as exc:
-                last_error = exc
-                if attempt == 0 and "Timed out waiting for Dockge event: agent" in str(exc):
-                    while not self._stack_lists.empty():
-                        self._stack_lists.get_nowait()
-                    time.sleep(3)
-                    continue
-                raise
-        if last_error is not None:
-            raise last_error
+        self.agent_call("requestStackList", endpoint=wanted)
 
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:

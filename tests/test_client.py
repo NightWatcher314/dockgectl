@@ -2,21 +2,29 @@ import pytest
 import socketio
 
 from dockgectl.client import DockgeClient, status_name
-from dockgectl.errors import AuthError, NotFoundError
+from dockgectl.errors import ApiError, AuthError, NotFoundError
 
 
 class FakeSocket:
-    def __init__(self):
+    def __init__(self, *, info_mode=None, login_mode=None, agent_status="online"):
         self.handlers = {}
         self.connected = False
         self.calls = []
+        self.connection_auth = None
+        self.info_mode = info_mode
+        self.login_mode = login_mode
+        self.agent_status = agent_status
 
     def on(self, event, handler):
         self.handlers[event] = handler
 
-    def connect(self, _url, wait_timeout=20):
+    def connect(self, _url, wait_timeout=20, auth=None):
         self.connected = True
-        self.handlers["info"]({"version": "1.5.0"})
+        self.connection_auth = auth
+        info = {"version": "1.5.0"}
+        if self.info_mode:
+            info["agentConnectionMode"] = self.info_mode
+        self.handlers["info"](info)
 
     def disconnect(self):
         self.connected = False
@@ -29,7 +37,10 @@ class FakeSocket:
                 return {"ok": True, "token": "jwt"}
             if payload.get("username") == "2fa":
                 return {"tokenRequired": True}
-            return {"ok": True, "token": "jwt"}
+            response = {"ok": True, "token": "jwt"}
+            if self.login_mode:
+                response["agentConnectionMode"] = self.login_mode
+            return response
         if event == "loginByToken":
             self.handlers["agentList"]({
                 "ok": True,
@@ -43,7 +54,12 @@ class FakeSocket:
                     },
                 },
             })
-            return {"ok": True}
+            if self.agent_status:
+                self.handlers["agentStatus"]({"endpoint": "remote.example.com", "status": self.agent_status})
+            response = {"ok": True}
+            if self.login_mode:
+                response["agentConnectionMode"] = self.login_mode
+            return response
         if event == "composerize":
             return {"ok": True, "composeTemplate": "services:\n  web:\n    image: nginx\n"}
         if event == "agent":
@@ -77,6 +93,24 @@ def test_login_returns_and_stores_token():
     assert c.token == "jwt"
 
 
+def test_connect_marks_dockgectl_in_handshake_auth():
+    fake = FakeSocket()
+    c = client(fake)
+
+    c.connect()
+
+    assert fake.connection_auth == {"clientType": "dockgectl"}
+
+
+def test_login_by_token_keeps_scalar_token_protocol():
+    fake = FakeSocket()
+    c = client(fake)
+
+    c.login_by_token()
+
+    assert ("loginByToken", ("token",), 20) in fake.calls
+
+
 def test_login_raises_for_2fa_requirement():
     fake = FakeSocket()
     c = DockgeClient("https://dockge.example.com", socket_factory=lambda: fake)
@@ -92,7 +126,7 @@ def test_list_stacks_waits_for_stacklist_push():
     assert stacks["app"]["status"] == 3
 
 
-def test_list_stacks_retries_transient_agent_timeout(monkeypatch):
+def test_read_only_agent_call_retries_explicit_not_ready_ack(monkeypatch):
     fake = FakeSocket()
     attempts = 0
     original_call = fake.call
@@ -102,7 +136,7 @@ def test_list_stacks_retries_transient_agent_timeout(monkeypatch):
         if event == "agent" and data[1] == "requestStackList":
             attempts += 1
             if attempts == 1:
-                raise socketio.exceptions.TimeoutError()
+                return {"ok": False, "code": "AGENT_NOT_READY", "msg": "Agent bootstrap in progress"}
         return original_call(event, data, timeout)
 
     monkeypatch.setattr(fake, "call", flaky_call)
@@ -112,6 +146,220 @@ def test_list_stacks_retries_transient_agent_timeout(monkeypatch):
 
     assert attempts == 2
     assert stacks["app"]["endpoint"] == "remote.example.com"
+
+
+def test_read_only_agent_call_does_not_retry_ambiguous_timeout(monkeypatch):
+    fake = FakeSocket()
+    attempts = 0
+    original_call = fake.call
+
+    def flaky_call(event, data=(), timeout=20):
+        nonlocal attempts
+        if event == "agent" and data[1] == "getStack":
+            attempts += 1
+            raise socketio.exceptions.TimeoutError()
+        return original_call(event, data, timeout)
+
+    monkeypatch.setattr(fake, "call", flaky_call)
+    monkeypatch.setattr("dockgectl.client.time.sleep", lambda _seconds: None)
+    c = client(fake)
+
+    with pytest.raises(ApiError, match="Timed out waiting for Dockge event: agent"):
+        c.get_stack("app", endpoint="remote.example.com")
+
+    assert attempts == 1
+
+
+@pytest.mark.parametrize(
+    ("invoke", "agent_event"),
+    [
+        (lambda c: c.save_stack("app", "services: {}\n", "", False, endpoint="remote.example.com"), "saveStack"),
+        (lambda c: c.deploy_stack("app", "services: {}\n", "", False, endpoint="remote.example.com"), "deployStack"),
+        (lambda c: c.stack_action("start", "app", endpoint="remote.example.com"), "startStack"),
+        (lambda c: c.stack_action("stop", "app", endpoint="remote.example.com"), "stopStack"),
+        (lambda c: c.stack_action("restart", "app", endpoint="remote.example.com"), "restartStack"),
+        (lambda c: c.stack_action("update", "app", endpoint="remote.example.com"), "updateStack"),
+        (lambda c: c.stack_action("down", "app", endpoint="remote.example.com"), "downStack"),
+        (lambda c: c.stack_action("delete", "app", endpoint="remote.example.com"), "deleteStack"),
+        (lambda c: c.service_action("start", "app", "web", endpoint="remote.example.com"), "startService"),
+        (lambda c: c.service_action("stop", "app", "web", endpoint="remote.example.com"), "stopService"),
+        (lambda c: c.service_action("restart", "app", "web", endpoint="remote.example.com"), "restartService"),
+    ],
+)
+def test_write_agent_calls_never_retry_not_ready_ack(monkeypatch, invoke, agent_event):
+    fake = FakeSocket()
+    attempts = 0
+    original_call = fake.call
+
+    def not_ready_call(event, data=(), timeout=20):
+        nonlocal attempts
+        if event == "agent" and data[1] == agent_event:
+            attempts += 1
+            return {"ok": False, "code": "AGENT_NOT_READY", "msg": "Agent bootstrap in progress"}
+        return original_call(event, data, timeout)
+
+    monkeypatch.setattr(fake, "call", not_ready_call)
+    monkeypatch.setattr("dockgectl.client.time.sleep", lambda _seconds: None)
+    c = client(fake)
+
+    with pytest.raises(ApiError, match="AGENT_NOT_READY: Agent bootstrap in progress.*remote.example.com") as exc_info:
+        invoke(c)
+
+    assert exc_info.value.code == "AGENT_NOT_READY"
+    assert exc_info.value.endpoint == "remote.example.com"
+    assert attempts == 1
+
+
+@pytest.mark.parametrize("code", ["AGENT_NOT_FOUND", "AGENT_AUTH_FAILED", "AGENT_PROXY_ERROR"])
+def test_read_only_agent_call_does_not_retry_non_bootstrap_ack(monkeypatch, code):
+    fake = FakeSocket()
+    attempts = 0
+    original_call = fake.call
+
+    def failed_call(event, data=(), timeout=20):
+        nonlocal attempts
+        if event == "agent" and data[1] == "getStack":
+            attempts += 1
+            return {"ok": False, "code": code, "message": "proxy failed"}
+        return original_call(event, data, timeout)
+
+    monkeypatch.setattr(fake, "call", failed_call)
+    monkeypatch.setattr("dockgectl.client.time.sleep", lambda _seconds: None)
+    c = client(fake)
+
+    with pytest.raises(ApiError, match=rf"{code}: proxy failed.*remote.example.com") as exc_info:
+        c.get_stack("app", endpoint="remote.example.com")
+
+    assert exc_info.value.code == code
+    assert attempts == 1
+
+
+def test_offline_target_fails_before_agent_event_is_sent():
+    fake = FakeSocket()
+    original_call = fake.call
+
+    def offline_login(event, data=(), timeout=20):
+        result = original_call(event, data, timeout)
+        if event == "loginByToken":
+            fake.handlers["agentStatus"]({"endpoint": "remote.example.com", "status": "offline", "msg": "connection failed"})
+        return result
+
+    fake.call = offline_login
+    c = client(fake)
+
+    with pytest.raises(ApiError, match="remote.example.com.*offline.*connection failed") as exc_info:
+        c.get_stack("app", endpoint="remote.example.com")
+
+    assert exc_info.value.code == "AGENT_OFFLINE"
+    assert not any(call[0] == "agent" for call in fake.calls)
+
+
+def test_unrelated_offline_agent_does_not_block_online_target():
+    fake = FakeSocket()
+    original_call = fake.call
+
+    def mixed_status_login(event, data=(), timeout=20):
+        result = original_call(event, data, timeout)
+        if event == "loginByToken":
+            fake.handlers["agentStatus"]({"endpoint": "us.example.com", "status": "offline"})
+        return result
+
+    fake.call = mixed_status_login
+    c = client(fake)
+
+    stack = c.get_stack("app", endpoint="remote.example.com")
+
+    assert stack["name"] == "app"
+
+
+def test_unknown_agent_endpoint_fails_without_sending_agent_event():
+    fake = FakeSocket()
+    c = client(fake)
+
+    with pytest.raises(ApiError, match="not configured: missing.example.com") as exc_info:
+        c.get_stack("app", endpoint="missing.example.com")
+
+    assert exc_info.value.code == "AGENT_NOT_FOUND"
+    assert not any(call[0] == "agent" for call in fake.calls)
+
+
+@pytest.mark.parametrize("capability_source", ["info", "login"])
+def test_lazy_server_allows_first_proxy_request_without_agent_status(capability_source):
+    fake = FakeSocket(
+        info_mode="lazy" if capability_source == "info" else None,
+        login_mode="lazy" if capability_source == "login" else None,
+        agent_status=None,
+    )
+    c = client(fake)
+
+    stack = c.get_stack("app", endpoint="remote.example.com")
+
+    assert stack["name"] == "app"
+    assert any(call[0] == "agent" and call[1][1] == "getStack" for call in fake.calls)
+
+
+def test_legacy_server_waits_when_agent_status_is_missing():
+    fake = FakeSocket(agent_status=None)
+    c = DockgeClient(
+        "https://dockge.example.com",
+        token="token",
+        timeout=0.01,
+        socket_factory=lambda: fake,
+    )
+
+    with pytest.raises(ApiError, match="did not become ready.*unknown") as exc_info:
+        c.get_stack("app", endpoint="remote.example.com")
+
+    assert exc_info.value.code == "AGENT_NOT_READY"
+    assert not any(call[0] == "agent" for call in fake.calls)
+
+
+def test_only_exact_lazy_capability_skips_missing_status_wait():
+    fake = FakeSocket(info_mode="LAZY", agent_status=None)
+    c = DockgeClient(
+        "https://dockge.example.com",
+        token="token",
+        timeout=0.01,
+        socket_factory=lambda: fake,
+    )
+
+    with pytest.raises(ApiError, match="did not become ready"):
+        c.get_stack("app", endpoint="remote.example.com")
+
+    assert not any(call[0] == "agent" for call in fake.calls)
+
+
+def test_legacy_server_waits_briefly_while_agent_is_connecting():
+    fake = FakeSocket(agent_status="connecting")
+    c = DockgeClient(
+        "https://dockge.example.com",
+        token="token",
+        timeout=0.01,
+        socket_factory=lambda: fake,
+    )
+
+    with pytest.raises(ApiError, match="did not become ready.*connecting") as exc_info:
+        c.get_stack("app", endpoint="remote.example.com")
+
+    assert exc_info.value.code == "AGENT_NOT_READY"
+    assert not any(call[0] == "agent" for call in fake.calls)
+
+
+def test_disconnect_clears_authentication_and_agent_state_for_reuse():
+    fake = FakeSocket()
+    c = client(fake)
+    c.get_stack("app", endpoint="remote.example.com")
+
+    c.disconnect()
+
+    assert c.logged_in is False
+    assert c.agent_list is None
+    assert c.agent_connection_mode is None
+    assert c._agent_statuses == {}
+
+    c.get_stack("app", endpoint="remote.example.com")
+    token_logins = [call for call in fake.calls if call[0] == "loginByToken"]
+    assert len(token_logins) == 2
 
 
 def test_list_stacks_ignores_unrelated_stacklist_pushes():
