@@ -1,4 +1,7 @@
-from dockgectl.commands.stack import _env_delta, _filter_logs, _stack_text
+import pytest
+
+from dockgectl.commands.stack import _assert_env_persisted, _desired_env_text, _env_delta, _filter_logs, _stack_text
+from dockgectl.errors import ApiError, NotFoundError
 
 
 def test_env_delta_redacts_secret_like_values():
@@ -25,6 +28,45 @@ def test_stack_text_accepts_common_dockge_keys():
     assert _stack_text({"composeYAML": "a"}, ("composeYAML", "compose")) == "a"
     assert _stack_text({"compose": "b"}, ("composeYAML", "compose")) == "b"
     assert _stack_text({}, ("composeYAML", "compose")) == ""
+
+
+class StackClient:
+    def __init__(self, env):
+        self.env = env
+
+    def get_stack(self, name, endpoint=None):
+        return {"name": name, "endpoint": endpoint or "", "composeENV": self.env}
+
+
+def test_omitted_env_file_preserves_existing_stack_env():
+    assert _desired_env_text(StackClient("KEEP=1\n"), "app", None, None) == "KEEP=1\n"
+
+
+def test_explicit_empty_env_file_clears_existing_stack_env(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("")
+
+    assert _desired_env_text(StackClient("KEEP=1\n"), "app", None, env_file) == ""
+
+
+class MissingStackClient:
+    def get_stack(self, name, endpoint=None):
+        raise NotFoundError(name)
+
+
+def test_omitted_env_file_for_new_stack_defaults_to_empty():
+    assert _desired_env_text(MissingStackClient(), "new-app", None, None) == ""
+
+
+def test_assert_env_persisted_passes_when_get_stack_matches():
+    stack = _assert_env_persisted(StackClient("A=1\n"), "app", "A=1\n", None)
+
+    assert stack["name"] == "app"
+
+
+def test_assert_env_persisted_fails_when_get_stack_differs():
+    with pytest.raises(ApiError, match="did not persist"):
+        _assert_env_persisted(StackClient("OLD=1\n"), "app", "NEW=1\n", None)
 
 from dockgectl.commands.service import _agent_endpoints as service_agent_endpoints
 from dockgectl.commands.stack import _agent_endpoints as stack_agent_endpoints, _service_status_ok
