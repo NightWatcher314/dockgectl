@@ -23,6 +23,8 @@ skill 中编码的关键规则：
 - 覆盖已有 stack 前，用 `dockgectl stack plan` / `dockgectl stack diff` 预览差异。
 - 使用 `dockgectl stack apply --verify` 完成 save/deploy 后的 stack 与 service 轮询验证。
 - stack 变更后使用 `dockgectl stack get NAME -o json` 验证；服务级变更后使用 `dockgectl service status NAME -o json` 验证。
+- 将原始 `stack get` / `stack ps` JSON 视为可能含密钥的输出，因为其中可能包含 Compose 和 `composeENV`；只允许写入受保护临时文件，并仅显示白名单字段。
+- 应用已有 stack 前，按 YAML 字段路径建立结构化白名单；任何非目标字段变化都必须中止。
 
 ## 安装
 
@@ -88,6 +90,8 @@ dockgectl stack logs app --tail 200
 dockgectl stack logs app --follow --grep ERROR
 ```
 
+`--tail` 从 dockgectl 0.2.3 起受支持。旧版二进制不接受该参数时，使用 `dockgectl stack logs app | tail -n 200`，或先检查 `dockgectl stack logs --help` 再升级。
+
 预览、保存、部署或应用 stack：
 
 ```bash
@@ -99,6 +103,8 @@ dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url http
 ```
 
 `stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。省略 `--env-file` 会保留 stack 现有 env；只有显式传入空 env 文件才会清空。变更后 dockgectl 会重新读取 stack，核对提交的 env 是否真正持久化。`stack diff` 默认会脱敏疑似 secret 的 env 值；`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 会轮询 `stack get` 与 `service status`；即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。服务验证会接受常见 Dockge/Docker 健康状态，例如 `running`、`healthy`、`started` 和 `up`。
+
+应用变更后的 Compose 前，应结构化解析 live 与 proposed YAML，并只允许任务批准的字段路径变化，例如 `services.web.image`。发现任何其他字段变化时立即中止，并显式断言 Redis、Postgres 等依赖服务镜像保持不变。禁止使用宽泛正则做 service-scoped 修改。
 
 执行 stack 操作：
 

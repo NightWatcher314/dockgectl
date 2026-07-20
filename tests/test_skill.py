@@ -13,4 +13,6 @@ def test_skill_frontmatter_and_executor_guidance():
     assert "uv run dockgectl" in body
     assert "Destructive or disruptive actions" in body
     assert "dockgectl stack list -o json" in body
-
+    assert "composeENV" in body
+    assert "Compose field allowlist" in body
+    assert "stack logs --tail" in body

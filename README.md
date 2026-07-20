@@ -23,6 +23,8 @@ Key rules encoded in the skill:
 - Preview changes with `dockgectl stack plan` / `dockgectl stack diff` when overwriting an existing stack.
 - Use `dockgectl stack apply --verify` for save/deploy plus post-change stack and service polling.
 - Verify stack mutations with `dockgectl stack get NAME -o json`; verify service-level changes with `dockgectl service status NAME -o json`.
+- Treat raw `stack get` / `stack ps` JSON as secret-bearing because it can contain Compose and `composeENV`; redirect it to a protected file and display only allowlisted fields.
+- Before applying an existing stack, structurally allowlist the exact Compose YAML paths permitted to change and abort on any unrelated field change.
 
 ## Install
 
@@ -88,6 +90,8 @@ dockgectl stack logs app --tail 200
 dockgectl stack logs app --follow --grep ERROR
 ```
 
+`--tail` is supported in dockgectl 0.2.3 and later. For an older installed binary, use `dockgectl stack logs app | tail -n 200` or upgrade after checking `dockgectl stack logs --help`.
+
 Preview, save, deploy, or apply a stack:
 
 ```bash
@@ -99,6 +103,8 @@ dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url http
 ```
 
 `stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. Omitting `--env-file` preserves the current stack env; pass an explicitly empty env file to clear it. After a mutation, dockgectl reads the stack back and verifies the submitted env content. `stack diff` redacts secret-like env values by default; `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`; if the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome. Service verification accepts common Dockge/Docker healthy states such as `running`, `healthy`, `started`, and `up`.
+
+Before applying a changed Compose file, parse the live and proposed YAML structurally and allowlist the exact paths that may change, such as `services.web.image`. Abort if any other field changes, and explicitly assert dependency service images remain unchanged. Do not use broad regex replacement for service-scoped mutations.
 
 Run stack actions:
 
