@@ -20,8 +20,8 @@ Key rules encoded in the skill:
 - Do not write real tokens, passwords, or private instance URLs into docs or command examples.
 - Prefer supported `dockgectl` commands over raw Socket.IO calls.
 - Require explicit user intent for disruptive actions such as `stack stop`, `stack down`, `stack delete`, and overwriting with `stack deploy`.
-- Preview changes with `dockgectl stack plan` / `dockgectl stack diff` when overwriting an existing stack.
-- Use `dockgectl stack apply --verify` for save/deploy plus post-change stack and service polling.
+- Structurally compare Compose before overwriting an existing stack. Treat `stack diff` as secret-bearing when Compose may contain literal credentials.
+- Use `dockgectl stack apply --verify` for save/deploy plus post-change stack and service polling, but capture its output in a mode-0600 temporary file and emit only allowlisted verification fields.
 - Verify stack mutations with `dockgectl stack get NAME -o json`; verify service-level changes with `dockgectl service status NAME -o json`.
 - Treat raw `stack get` / `stack ps` JSON as secret-bearing because it can contain Compose and `composeENV`; redirect it to a protected file and display only allowlisted fields.
 - Before applying an existing stack, structurally allowlist the exact Compose YAML paths permitted to change and abort on any unrelated field change.
@@ -102,7 +102,7 @@ dockgectl stack deploy app -f compose.yml --env-file .env --yes
 dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
 ```
 
-`stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. Omitting `--env-file` preserves the current stack env; pass an explicitly empty env file to clear it. After a mutation, dockgectl reads the stack back and verifies the submitted env content. `stack diff` redacts secret-like env values by default; `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`; if the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome. Service verification accepts common Dockge/Docker healthy states such as `running`, `healthy`, `started`, and `up`.
+`stack save`, `stack deploy`, and `stack apply` prompt before overwriting an existing stack unless `--yes` is supplied. Use `--dry-run` to print the plan without mutating Dockge. Omitting `--env-file` preserves the current stack env; pass an explicitly empty env file to clear it. After a mutation, dockgectl reads the stack back and verifies the submitted env content. `stack diff` redacts secret-like env values by default, but does not redact literal credentials inside Compose; capture it rather than recording it when Compose may contain secrets. `--include-env-values` prints raw env diffs and can expose secrets. `stack apply --verify` keeps polling `stack get` and `service status`, but its output includes `verification.stack` with full `composeYAML` and `composeENV`; redirect the result to a protected file and emit only `applied`, `apply_error`, `verification.ok`, `verification.services`, and `verification.health`. If the Dockge Socket.IO event times out but the service converges, verification can still report the real outcome. Service verification accepts common Dockge/Docker healthy states such as `running`, `healthy`, `started`, and `up`.
 
 Before applying a changed Compose file, parse the live and proposed YAML structurally and allowlist the exact paths that may change, such as `services.web.image`. Abort if any other field changes, and explicitly assert dependency service images remain unchanged. Do not use broad regex replacement for service-scoped mutations.
 

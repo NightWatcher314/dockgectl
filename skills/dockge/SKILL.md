@@ -25,15 +25,16 @@ uv run dockgectl --help
 
 - Use `dockgectl ... -o json` for inspection when subsequent reasoning depends on exact state, but treat raw `stack get` and `stack ps` JSON as secret-bearing because they can include Compose content and `composeENV`.
 - Never print, paste, or persist raw `stack get` / `stack ps` output in chat, logs, docs, or reports. Redirect it to a mode-0600 temporary file, extract only explicitly required non-secret fields, then delete the file.
-- Prefer `dockgectl stack plan` / `dockgectl stack diff` before overwriting an existing stack.
-- Prefer `dockgectl stack apply --verify` for stack save/deploy work that needs post-change validation.
+- Prefer a structural Compose comparison before overwriting an existing stack.
+- Treat `stack diff` output as secret-bearing when Compose may contain literal credentials; its env redaction does not redact Compose values.
+- Prefer `dockgectl stack apply --verify` for stack save/deploy work that needs post-change validation, but redirect its output to a mode-0600 temporary file because `verification.stack` can include full `composeYAML` and `composeENV`.
 - Do not write real tokens, passwords, or private instance URLs into docs or command examples.
 - `dockgectl` wraps Dockge's internal Socket.IO protocol; if an event is unsupported, inspect the CLI source before falling back to raw protocol calls.
 - On compatible Dockge versions, each CLI session lazily connects only the requested Agent endpoint. An unrelated offline Agent must not block the target endpoint.
 - Only explicit `AGENT_NOT_READY` responses for read-only events are retried once. Never automatically retry ambiguous Socket.IO timeouts or stack/service mutations.
 - Destructive or disruptive actions such as `stack stop`, `stack down`, `stack delete`, and overwriting with `stack deploy` require explicit user intent.
 - Before applying an existing stack, enforce a Compose field allowlist: compare the live Compose with the proposed file, list the exact YAML paths that changed, and abort if any path is outside the task-approved set. For a single image update, for example, allow only `services.<target>.image` and assert dependency service images such as Redis and Postgres are unchanged. Do not rely on broad regex replacement or a visual diff alone.
-- After mutations, verify the intended fields through a secret-safe readback, then run `dockgectl service status NAME -o json`. If a Dockge event times out but the service may still be converging, use `stack apply --verify`, service status, logs, and direct health checks before calling the deploy failed. `stack apply --verify` accepts service states such as `running`, `healthy`, `started`, and `up`; `health: null` only means no `--health-url` was supplied.
+- After mutations, extract only `applied`, `apply_error`, `verification.ok`, `verification.services`, and `verification.health` from protected `stack apply --verify` output, then delete the file. Never emit `verification.stack`. Run `dockgectl service status NAME -o json` and direct health checks separately. If a Dockge event times out but the service may still be converging, use protected `stack apply --verify` output, service status, logs, and direct health checks before calling the deploy failed. `stack apply --verify` accepts service states such as `running`, `healthy`, `started`, and `up`; `health: null` only means no `--health-url` was supplied.
 
 ## Secret-safe inspection
 
@@ -62,7 +63,7 @@ Before `stack save`, `stack deploy`, or `stack apply` on an existing stack:
 4. Define the task-approved allowlist before mutation, for example `services.web.image`.
 5. Abort when an added, removed, or changed path is not allowlisted.
 6. Explicitly assert critical sibling/dependency fields remain equal.
-7. Run `dockgectl stack diff`; keep env values redacted and never use `--include-env-values` in recorded output.
+7. If a human-readable diff is needed, capture `dockgectl stack diff` to a mode-0600 temporary file and inspect locally. Do not record it when Compose contains literal credentials; env redaction does not redact Compose values. Never use `--include-env-values` in recorded output.
 8. Apply only after the structural gate and human-readable diff agree.
 
 ## Common commands
@@ -98,8 +99,11 @@ Manage stacks:
 
 ```bash
 dockgectl stack plan app -f compose.yml --env-file .env
-dockgectl stack diff app -f compose.yml --env-file .env
-dockgectl stack apply app -f compose.yml --env-file .env --yes
+tmp="$(mktemp)"
+chmod 600 "$tmp"
+dockgectl stack apply app -f compose.yml --env-file .env --yes --verify >"$tmp"
+jq '{applied, apply_error, verification: {ok: .verification.ok, services: .verification.services, health: .verification.health}}' "$tmp"
+rm -f "$tmp"
 dockgectl stack start app
 dockgectl stack restart app
 dockgectl stack stop app --yes
