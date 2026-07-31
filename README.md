@@ -38,8 +38,8 @@ brew install dockgectl
 For development:
 
 ```bash
-uv sync
-uv run dockgectl --help
+UV_NO_CONFIG=1 UV_DEFAULT_INDEX=https://pypi.org/simple uv sync --locked
+UV_NO_CONFIG=1 UV_DEFAULT_INDEX=https://pypi.org/simple uv run --locked dockgectl --help
 ```
 
 ## Configure
