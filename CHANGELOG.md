@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.4 - 2026-08-01
+
+- Lock release dependencies to public PyPI so installs do not depend on a
+  private package mirror.
+- Add CI checks that reject non-public package sources and verify the locked
+  environment, tests, and package build.
+- Document safer handling for Dockge output that may contain Compose or env
+  secrets.
+
 ## v0.2.3 - 2026-07-12
 
 - Identify dockgectl through Socket.IO handshake metadata so compatible Dockge
