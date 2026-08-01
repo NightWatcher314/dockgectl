@@ -35,6 +35,12 @@ brew tap NightWatcher314/homebrew-formula
 brew install dockgectl
 ```
 
+使用 uv 从 PyPI 安装：
+
+```bash
+uv tool install dockgectl
+```
+
 开发环境：
 
 ```bash
