@@ -1,0 +1,73 @@
+name: Publish PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish
+        required: true
+        type: string
+
+concurrency:
+  group: publish-pypi-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      UV_NO_CONFIG: "1"
+      UV_DEFAULT_INDEX: https://pypi.org/simple
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8.3.2
+
+      - name: Verify tag and versions
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$(git rev-parse HEAD)"
+          python3 - "$RELEASE_TAG" <<'PY'
+          import re
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          version = sys.argv[1].removeprefix("v")
+          project = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          match = re.search(
+              r'^__version__ = "([^"]+)"$',
+              Path("src/dockgectl/__init__.py").read_text(),
+              re.MULTILINE,
+          )
+          runtime = match.group(1) if match else None
+          if {project, runtime} != {version}:
+              raise SystemExit(
+                  f"version mismatch: tag={version}, project={project}, runtime={runtime}"
+              )
+          PY
+
+      - name: Build package
+        run: uv build --out-dir dist --clear --no-sources
+
+      - name: Publish package
+        run: >-
+          uv publish
+          --trusted-publishing always
+          --check-url https://pypi.org/simple/dockgectl/
+          dist/*

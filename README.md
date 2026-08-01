@@ -167,6 +167,18 @@ dockgectl auth login --use-saved-password
 
 The config file is stored at `~/.config/dockgectl/config.json` with mode `0600` where possible, but saved passwords are still plaintext. Only use `--save-password` on machines you trust.
 
+## Publishing
+
+PyPI releases use GitHub Trusted Publishing. After pushing an existing release
+tag, dispatch `.github/workflows/publish-pypi.yml` with the tag name:
+
+```bash
+gh workflow run publish-pypi.yml --ref main -f tag=v0.2.4
+```
+
+The workflow verifies the tag and package versions, builds from that tag, and
+publishes with GitHub OIDC. Do not store a long-lived PyPI token in GitHub.
+
 ## License
 
 MIT
