@@ -1,3 +1,5 @@
+import json
+
 from typer.testing import CliRunner
 
 from dockgectl.cli import app
@@ -48,3 +50,42 @@ def test_invalid_output_format_fails_for_config_get(tmp_path, monkeypatch):
 def test_stack_logs_rejects_negative_tail():
     res = CliRunner().invoke(app, ["stack", "logs", "app", "--tail", "-1"])
     assert res.exit_code != 0
+
+
+def test_stack_apply_help_exposes_structured_output():
+    res = CliRunner().invoke(app, ["stack", "apply", "--help"])
+    assert res.exit_code == 0
+    assert "--output" in res.output
+    assert "-o" in res.output
+
+
+def test_stack_apply_rejects_invalid_output_before_connecting(tmp_path):
+    compose = tmp_path / "compose.yaml"
+    compose.write_text("services: {}\n")
+    res = CliRunner().invoke(app, ["stack", "apply", "app", "-f", str(compose), "-o", "bad"])
+    assert res.exit_code != 0
+    assert "--output must be table, json, or yaml" in res.output
+
+
+def test_stack_apply_dry_run_emits_valid_json(tmp_path, monkeypatch):
+    from dockgectl.commands import stack
+    from dockgectl.errors import NotFoundError
+
+    class Client:
+        def get_stack(self, name, endpoint=None):
+            raise NotFoundError(name)
+
+        def disconnect(self):
+            pass
+
+    compose = tmp_path / "compose.yaml"
+    compose.write_text("services: {}\n")
+    monkeypatch.setattr(stack, "make_client", lambda: (None, Client()))
+
+    res = CliRunner().invoke(
+        app,
+        ["stack", "apply", "app", "-f", str(compose), "--dry-run", "-o", "json"],
+    )
+
+    assert res.exit_code == 0
+    assert json.loads(res.output)["name"] == "app"

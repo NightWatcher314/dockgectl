@@ -105,10 +105,10 @@ dockgectl stack plan app -f compose.yml --env-file .env
 dockgectl stack diff app -f compose.yml --env-file .env
 dockgectl stack save app -f compose.yml --env-file .env --yes
 dockgectl stack deploy app -f compose.yml --env-file .env --yes
-dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health
+dockgectl stack apply app -f compose.yml --env-file .env --yes --health-url https://app.example.com/health -o json
 ```
 
-`stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。省略 `--env-file` 会保留 stack 现有 env；只有显式传入空 env 文件才会清空。变更后 dockgectl 会重新读取 stack，核对提交的 env 是否真正持久化。`stack diff` 默认只脱敏疑似 secret 的 env 值，不会脱敏 Compose 内的明文凭据；Compose 可能含 secret 时只能捕获到受保护文件，不能直接记录。`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 会轮询 `stack get` 与 `service status`，但输出中的 `verification.stack` 包含完整 `composeYAML` 和 `composeENV`；必须先重定向到受保护文件，只输出 `applied`、`apply_error`、`verification.ok`、`verification.services` 和 `verification.health`。即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。服务验证会接受常见 Dockge/Docker 健康状态，例如 `running`、`healthy`、`started` 和 `up`。
+`stack save`、`stack deploy` 和 `stack apply` 覆盖已有 stack 前会确认；明确需要自动化时使用 `--yes`。使用 `--dry-run` 只输出计划不修改 Dockge。省略 `--env-file` 会保留 stack 现有 env；只有显式传入空 env 文件才会清空。变更后 dockgectl 会重新读取 stack，核对提交的 env 是否真正持久化。`stack diff` 默认只脱敏疑似 secret 的 env 值，不会脱敏 Compose 内的明文凭据；Compose 可能含 secret 时只能捕获到受保护文件，不能直接记录。`--include-env-values` 会输出原始 env diff，可能暴露密钥。`stack apply --verify` 支持 `-o json|yaml|table`，并会轮询 `stack get` 与 `service status`，但输出中的 `verification.stack` 包含完整 `composeYAML` 和 `composeENV`；必须先重定向到受保护文件，只输出 `applied`、`apply_error`、`verification.ok`、`verification.services` 和 `verification.health`。即使 Dockge Socket.IO 事件等待超时，也会继续用真实服务状态判断结果。服务验证会接受常见 Dockge/Docker 健康状态，例如 `running`、`healthy`、`started` 和 `up`。
 
 应用变更后的 Compose 前，应结构化解析 live 与 proposed YAML，并只允许任务批准的字段路径变化，例如 `services.web.image`。发现任何其他字段变化时立即中止，并显式断言 Redis、Postgres 等依赖服务镜像保持不变。禁止使用宽泛正则做 service-scoped 修改。
 

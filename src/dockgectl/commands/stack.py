@@ -20,6 +20,7 @@ from dockgectl.output import dump
 
 app = typer.Typer(help="Manage Dockge stacks")
 console = Console()
+error_console = Console(stderr=True)
 
 SECRET_KEY_RE = re.compile(r"(pass|password|token|secret|key|credential|cookie|auth|jwt)", re.I)
 COMPOSE_KEYS = ("composeYAML", "composeYaml", "composeFile", "compose", "yaml")
@@ -471,9 +472,12 @@ def apply_stack(
     health_url: str = typer.Option(None, "--health-url", help="Optional HTTP(S) URL that must return a 2xx/3xx status"),
     timeout: float = typer.Option(120.0, "--timeout", help="Verification timeout in seconds"),
     interval: float = typer.Option(3.0, "--interval", help="Verification poll interval in seconds"),
+    output: str = typer.Option("yaml", "--output", "-o", help="table|json|yaml"),
 ):
     if mode not in {"deploy", "save"}:
         raise typer.BadParameter("--mode must be deploy or save")
+    if output not in {"table", "json", "yaml"}:
+        raise typer.BadParameter("--output must be table, json, or yaml")
     _cfg, client = make_client()
     try:
         ep = _endpoint(endpoint)
@@ -481,7 +485,7 @@ def apply_stack(
         env_text = _desired_env_text(client, name, ep, env_file)
         plan = _build_plan(client, name, compose_text, env_text, ep)
         if dry_run:
-            dump(plan, "yaml")
+            dump(plan, output)
             return
         _confirm_overwrite(name, bool(plan["exists"]), yes, mode)
         apply_error: str | None = None
@@ -495,16 +499,16 @@ def apply_stack(
             apply_error = str(exc)
             if "Timed out waiting" not in apply_error:
                 raise
-            console.print(f"[yellow]Apply event timed out; continuing with verification:[/yellow] {apply_error}")
+            error_console.print(f"[yellow]Apply event timed out; continuing with verification:[/yellow] {apply_error}")
         result = {"applied": apply_error is None, "apply_error": apply_error, "plan": plan}
         if verify:
             verification = _verify_stack(client, name, ep, health_url, timeout, interval, require_services=(mode == "deploy"), desired_env=env_text)
             result["verification"] = verification
-            dump(result, "yaml")
+            dump(result, output)
             if not verification.get("ok"):
                 raise typer.Exit(1)
         else:
-            dump(result, "yaml")
+            dump(result, output)
     finally:
         client.disconnect()
 

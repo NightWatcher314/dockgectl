@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.5 - 2026-08-19
+
+- Add `stack apply --output/-o table|json|yaml`; default remains YAML for compatibility.
+- Validate output format before mutation and write timeout diagnostics to stderr so JSON stays machine-readable.
+
 ## v0.2.4 - 2026-08-01
 
 - Lock release dependencies to public PyPI so installs do not depend on a
@@ -8,7 +13,6 @@
   environment, tests, and package build.
 - Document safer handling for Dockge output that may contain Compose or env
   secrets.
-
 ## v0.2.3 - 2026-07-12
 
 - Identify dockgectl through Socket.IO handshake metadata so compatible Dockge
