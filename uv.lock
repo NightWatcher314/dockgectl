@@ -141,7 +141,7 @@ wheels = [
 
 [[package]]
 name = "dockgectl"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "." }
 dependencies = [
     { name = "platformdirs" },

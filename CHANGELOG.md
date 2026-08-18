@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.6 - 2026-08-19
+
+- Make CLI option tests independent of terminal-specific Typer/Rich rendering.
+- Include the `stack apply --output/-o table|json|yaml` support introduced in
+  the unpublished v0.2.5 tag.
+
 ## v0.2.5 - 2026-08-19
 
 - Add `stack apply --output/-o table|json|yaml`; default remains YAML for compatibility.

@@ -1,5 +1,6 @@
 import json
 
+import typer
 from typer.testing import CliRunner
 
 from dockgectl.cli import app
@@ -53,18 +54,25 @@ def test_stack_logs_rejects_negative_tail():
 
 
 def test_stack_apply_help_exposes_structured_output():
-    res = CliRunner().invoke(app, ["stack", "apply", "--help"])
-    assert res.exit_code == 0
-    assert "--output" in res.output
-    assert "-o" in res.output
+    root = typer.main.get_command(app)
+    apply = root.commands["stack"].commands["apply"]
+    output = next(param for param in apply.params if param.name == "output")
+    assert output.opts == ["--output", "-o"]
 
 
-def test_stack_apply_rejects_invalid_output_before_connecting(tmp_path):
+def test_stack_apply_rejects_invalid_output_before_connecting(tmp_path, monkeypatch):
+    from dockgectl.commands import stack
+
     compose = tmp_path / "compose.yaml"
     compose.write_text("services: {}\n")
+    monkeypatch.setattr(
+        stack,
+        "make_client",
+        lambda: (_ for _ in ()).throw(AssertionError("must not connect")),
+    )
     res = CliRunner().invoke(app, ["stack", "apply", "app", "-f", str(compose), "-o", "bad"])
     assert res.exit_code != 0
-    assert "--output must be table, json, or yaml" in res.output
+    assert not isinstance(res.exception, AssertionError)
 
 
 def test_stack_apply_dry_run_emits_valid_json(tmp_path, monkeypatch):
